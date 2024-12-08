@@ -1,156 +1,226 @@
-import React, { useState } from 'react'; // Import useState
-import './chat.css';
-import Picker from 'emoji-picker-react'; // Correct import for the emoji picker
+import { useEffect, useRef, useState } from "react";
+import "./chat.css";
+import EmojiPicker from "emoji-picker-react";
+import { useChatStore } from "../../lib/chatStore";
+import { useUserStore } from "../../lib/userStore";
+import supabase from "../../lib/supabase";
+import { format } from "timeago.js";
 
 const Chat = () => {
-  const [showEmoji, setShowEmoji] = useState(false);
+  const [chat, setChat] = useState();
+  const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [image, setImage] = useState(null); // Store selected image
+  const [img, setImg] = useState({
+    file: null,
+    url: "",
+  });
 
-  const handleEmojiClick = (emojiObject) => {
-    // Append the emoji to the text input
-    setText((prev) => prev + emojiObject.emoji);
+  const { currentUser } = useUserStore();
+  const { chatId, user, isCurrentUserBlocked, isReceiverBlocked } =
+    useChatStore();
+
+  const endRef = useRef(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chat?.messages]);
+
+  // Fetch chat data from Supabase
+  useEffect(() => {
+    const fetchChat = async () => {
+      const { data, error } = await supabase
+        .from("chats")
+        .select("*")
+        .eq("chatId", chatId)
+        .single();
+
+      if (error) {
+        console.log(error);
+      } else {
+        setChat(data);
+      }
+    };
+
+    fetchChat();
+  }, [chatId]);
+
+  const handleEmoji = (e) => {
+    setText((prev) => prev + e.emoji);
+    setOpen(false);
   };
-  //image pick
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImage(reader.result); // Store the image data as base64
-      };
-      reader.readAsDataURL(file);
+
+  const handleImg = (e) => {
+    if (e.target.files[0]) {
+      setImg({
+        file: e.target.files[0],
+        url: URL.createObjectURL(e.target.files[0]),
+      });
     }
   };
-  //camera
-  const handleCameraCapture = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImage(reader.result); // Store the captured image as base64
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-  const sendMessage = () => {
-    if (text.trim() !== "") {
-      // Add the new message
-      setMessages((prev) => [...prev, { text, sender: "you" }]);
-      setText("");
-      // Simulate a response from the other user
-      setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          { text: "Got it!", sender: "other" },
+
+  const handleSend = async () => {
+    if (text === "") return;
+
+    let imgUrl = null;
+
+    try {
+      if (img.file) {
+        // Upload image to Supabase Storage
+        const { data, error } = await supabase
+          .storage
+          .from('images') // Replace with your bucket name
+          .upload(`${Date.now()}_${img.file.name}`, img.file);
+
+        if (error) throw error;
+
+        const { publicURL, error: urlError } = supabase
+          .storage
+          .from('images')
+          .getPublicUrl(data.path);
+
+        if (urlError) throw urlError;
+
+        imgUrl = publicURL;
+      }
+
+      // Insert message into the chat table in Supabase
+      const { error } = await supabase
+        .from("messages")
+        .insert([
+          {
+            chat_id: chatId,
+            sender_id: currentUser.id,
+            text,
+            img_url: imgUrl,
+            created_at: new Date().toISOString(),
+          },
         ]);
-      }, 1000);
+
+      if (error) throw error;
+
+      // Update the user's last message in the user chats table
+      const userIDs = [currentUser.id, user.id];
+
+      for (const id of userIDs) {
+        const { data: userChatsData, error } = await supabase
+          .from("userchats")
+          .select("chats")
+          .eq("user_id", id)
+          .single();
+
+        if (error) throw error;
+
+        const chatIndex = userChatsData.chats.findIndex(
+          (c) => c.chatId === chatId
+        );
+
+        if (chatIndex !== -1) {
+          userChatsData.chats[chatIndex].lastMessage = text;
+          userChatsData.chats[chatIndex].isSeen =
+            id === currentUser.id ? true : false;
+          userChatsData.chats[chatIndex].updatedAt = Date.now();
+
+          const { error: updateError } = await supabase
+            .from("userchats")
+            .upsert({
+              user_id: id,
+              chats: userChatsData.chats,
+            });
+
+          if (updateError) throw updateError;
+        }
+      }
+    } catch (err) {
+      console.log(err);
+    } finally {
+      setImg({ file: null, url: "" });
+      setText("");
     }
   };
 
   return (
     <div className="chat">
       <div className="top">
-        {/* User and Icons at the top */}
         <div className="user">
-          <img src="./avatar.png" alt="User profile" />
-          <div className="user-info">
+          <img src={user?.avatar || "./avatar.png"} alt="" />
+          <div className="texts">
+            <span>{user?.username}</span>
+            <p>Lorem ipsum dolor, sit amet.</p>
+          </div>
+        </div>
+        <div className="icons">
+          <img src="./phone.png" alt="" />
+          <img src="./video.png" alt="" />
+          <img src="./info.png" alt="" />
+        </div>
+      </div>
+      <div className="center">
+        {chat?.messages?.map((message) => (
+          <div
+            className={
+              message.senderId === currentUser?.id ? "message own" : "message"
+            }
+            key={message.createdAt}
+          >
             <div className="texts">
-              <span> Emanuel Jogora</span>
-              <p>Last seen 10 minutes ago</p>
+              {message.img && <img src={message.img} alt="" />}
+              <p>{message.text}</p>
+              <span>{format(message.createdAt)}</span>
             </div>
           </div>
-          <div className="icons">
-            <img src="./phone.png" alt="Voice call" />
-            <img src="./video.png" alt="Video call" />
-            <img src="./info.png" alt="More information" />
+        ))}
+        {img.url && (
+          <div className="message own">
+            <div className="texts">
+              <img src={img.url} alt="" />
+            </div>
           </div>
-        </div>
+        )}
+        <div ref={endRef}></div>
       </div>
-<div className='center'>
-      {/* Conversation Section */}
-      <div className="message own">
-        <img src='./avatar.png' alt="Avatar" />
-        <div className='texts'>
-          <p>Lorem ipsum dolor fatuas ajselsfc wladcke</p>
-          <span>11:45 AM</span>
-        </div>
-      </div>
-      <div className="message">
-        <img src='./Profile.png' alt="sender" />
-        <div className='texts'>
-          <p>Lorem ipsum dolor fatuas ajselsfc wladcke</p>
-          <span>11:45 AM</span>
-        </div>
-      </div>
-      <div className="message own">
-        <img src='./avatar.png' alt="Avatar" />
-        <div className='texts'>
-          <p>Lorem ipsum dolor fatuas ajselsfc wladcke</p>
-          <span>11:45 AM</span>
-        </div>
-      </div>
-      <div className="message">
-        <img src='./avatar.png' alt="Avatar" />
-        <div className='texts'>
-          <p>Lorem ipsum dolor fatuas ajselsfc wladcke</p>
-          <span>11:45 AM</span>
-        </div>
-      </div>
-      </div>
-      {/* Chat input */}
       <div className="bottom">
-        {/* File attach, camera, mic icons */}
         <div className="icons">
-          {/* Attach photo icon */}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleImageChange}
-            style={{ display: 'none' }}
-            id="file-input"
-          />
-          <label htmlFor="file-input">
-            <img src="/img.png" alt="Attach file" />
-          </label>          {/* Open camera icon */}
-          <input
-            type="file"
-            accept="image/*"
-            capture="camera"
-            onChange={handleCameraCapture}
-            style={{ display: 'none' }}
-            id="camera-input"
-          />
-          <label htmlFor="camera-input">
-            <img src="/camera.png" alt="Camera" />
+          <label htmlFor="file">
+            <img src="./img.png" alt="" />
           </label>
-          <img src="/mic.png" alt="Microphone" />
+          <input
+            type="file"
+            id="file"
+            style={{ display: "none" }}
+            onChange={handleImg}
+          />
+          <img src="./camera.png" alt="" />
+          <img src="./mic.png" alt="" />
         </div>
-
-        {/* Text input */}
         <input
           type="text"
-          placeholder="Type a message here..."
+          placeholder={
+            isCurrentUserBlocked || isReceiverBlocked
+              ? "You cannot send a message"
+              : "Type a message..."
+          }
           value={text}
           onChange={(e) => setText(e.target.value)}
+          disabled={isCurrentUserBlocked || isReceiverBlocked}
         />
-
-      
-        <div className="emoji" onClick={() => setShowEmoji(!showEmoji)}>
-          <img src="/emoji.png" alt="Emoji" />
+        <div className="emoji">
+          <img
+            src="./emoji.png"
+            alt=""
+            onClick={() => setOpen((prev) => !prev)}
+          />
+          <div className="picker">
+            <EmojiPicker open={open} onEmojiClick={handleEmoji} />
+          </div>
         </div>
-
-        {/* Send button */}
-        <button type="button" className="sendButton" onClick={sendMessage}>
+        <button
+          className="sendButton"
+          onClick={handleSend}
+          disabled={isCurrentUserBlocked || isReceiverBlocked}
+        >
           Send
         </button>
       </div>
-
-      {/* Show emoji picker when showEmoji is true */}
-      {showEmoji && (
-        <Picker onEmojiClick={(emojiObject) => handleEmojiClick(emojiObject)} />
-      )}
     </div>
   );
 };
