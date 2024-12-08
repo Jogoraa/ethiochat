@@ -68,39 +68,43 @@ const Chat = () => {
           </div>
         </div>
       </div>
-
+<div className='center'>
       {/* Conversation Section */}
-      <div className="conversation">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`message ${message.sender === "you" ? "sent" : "received"}`}
-          >
-            {message.sender === "you" ? (
-              <>
-                <div className="avatar">
-                  <img src="./avatar.png" alt="User Avatar" />
-                </div>
-                <div className="message-text">{message.text}</div>
-              </>
-            ) : (
-              <>
-                <div className="avatar">
-                  <img src="./avatar2.png" alt="Other User Avatar" />
-                </div>
-                <div className="message-text">{message.text}</div>
-              </>
-            )}
-          </div>
-        ))}
+      <div className="message own">
+        <img src='./avatar.png' alt="Avatar" />
+        <div className='texts'>
+          <p>Lorem ipsum dolor fatuas ajselsfc wladcke</p>
+          <span>11:45 AM</span>
+        </div>
       </div>
-
+      <div className="message">
+        <img src='./Profile.png' alt="sender" />
+        <div className='texts'>
+          <p>Lorem ipsum dolor fatuas ajselsfc wladcke</p>
+          <span>11:45 AM</span>
+        </div>
+      </div>
+      <div className="message own">
+        <img src='./avatar.png' alt="Avatar" />
+        <div className='texts'>
+          <p>Lorem ipsum dolor fatuas ajselsfc wladcke</p>
+          <span>11:45 AM</span>
+        </div>
+      </div>
+      <div className="message">
+        <img src='./avatar.png' alt="Avatar" />
+        <div className='texts'>
+          <p>Lorem ipsum dolor fatuas ajselsfc wladcke</p>
+          <span>11:45 AM</span>
+        </div>
+      </div>
+      </div>
       {/* Chat input */}
-      <div className="chat-input-section">
+      <div className="bottom">
         {/* File attach, camera, mic icons */}
         <div className="icons">
-  {/* Attach photo icon */}
-  <input
+          {/* Attach photo icon */}
+          <input
             type="file"
             accept="image/*"
             onChange={handleImageChange}
@@ -132,7 +136,7 @@ const Chat = () => {
           onChange={(e) => setText(e.target.value)}
         />
 
-        {/* Emoji button */}
+      
         <div className="emoji" onClick={() => setShowEmoji(!showEmoji)}>
           <img src="/emoji.png" alt="Emoji" />
         </div>
